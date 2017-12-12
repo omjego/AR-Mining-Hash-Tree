@@ -1,0 +1,220 @@
+import csv
+import itertools
+
+
+def load_data(filename):
+    """
+    Loads transactions from given file
+    :param filename:
+    :return:
+    """
+    reader = csv.reader(open(filename, 'r'), delimiter=',')
+    trans = [map(int, row[1:]) for row in reader]
+    return trans
+
+
+def find_frequent_one(data_set, support):
+    """
+    Find frequent one itemsets within data set
+    :param data_set:
+    :param support: Provided support value
+    :return:
+    """
+    candidate_one = {}
+    total = len(data_set)
+    for row in data_set:
+        for val in row:
+            if val in candidate_one:
+                candidate_one[val] += 1
+            else:
+                candidate_one[val] = 1
+
+    frequent_1 = []
+    for key, cnt in candidate_one.items():
+        # check if given item has sufficient count.
+        if cnt >= (support * total / 100):
+            frequent_1.append(key)
+    return frequent_1
+
+
+class HNode:
+    """
+    Class which represents node in a hash tree.
+    """
+
+    def __init__(self):
+        self.children = {}
+        self.isLeaf = True
+        self.bucket = {}
+
+
+class HTree:
+    """
+    Wrapper class for HTree instance
+    """
+
+    def __init__(self, max_leaf_cnt, max_child_cnt):
+        self.root = HNode()
+        self.max_leaf_cnt = max_leaf_cnt
+        self.max_child_cnt = max_child_cnt
+        self.frequent_itemsets = []
+
+    def recur_insert(self, node, itemset, index, cnt):
+        # TO-DO
+        """
+        Recursively adds nodes inside the tree and if required splits leaf node and
+        redistributes itemsets among child converting itself into intermediate node.
+        :param node:
+        :param itemset:
+        :param index:
+        :return:
+        """
+        if index == len(itemset):
+            # last bucket so just insert
+            if itemset in node.bucket:
+                node.bucket[itemset] += cnt
+            else:
+                node.bucket[itemset] = cnt
+            return
+
+        if node.isLeaf:
+
+            if itemset in node.bucket:
+                node.bucket[itemset] += cnt
+            else:
+                node.bucket[itemset] = cnt
+            if len(node.bucket) == self.max_leaf_cnt:
+                # bucket has reached its maximum capacity and its intermediate node so
+                # split and redistribute entries.
+                for old_itemset, old_cnt in node.bucket.iteritems():
+
+                    hash_key = self.hash(old_itemset[index])
+                    if hash_key not in node.children:
+                        node.children[hash_key] = HNode()
+                    self.recur_insert(node.children[hash_key], old_itemset, index + 1, old_cnt)
+                # there is no point in having this node's bucket
+                # so just delete it
+                del node.bucket
+                node.isLeaf = False
+        else:
+            hash_key = self.hash(itemset[index])
+            if hash_key not in node.children:
+                node.children[hash_key] = HNode()
+            self.recur_insert(node.children[hash_key], itemset, index + 1, cnt)
+
+    def insert(self, itemset):
+        # as list can't be hashed we need to convert this into tuple
+        # which can be easily hashed in leaf node buckets
+        itemset = tuple(itemset)
+        self.recur_insert(self.root, itemset, 0, 0)
+
+    def add_support(self, itemset):
+        runner = self.root
+        itemset = tuple(itemset)
+        index = 0
+        while True:
+            if runner.isLeaf:
+                if itemset in runner.bucket:
+                    runner.bucket[itemset] += 1
+                break
+            hash_key = self.hash(itemset[index])
+            if hash_key in runner.children:
+                runner = runner.children[hash_key]
+            else:
+                break
+            index += 1
+
+    def dfs(self, node, support_cnt):
+        if node.isLeaf:
+            for key, value in node.bucket.iteritems():
+                if value >= support_cnt:
+                    self.frequent_itemsets.append(list(key))
+                    print key, value, support_cnt
+            return
+
+        for child in node.children.values():
+            self.dfs(child, support_cnt)
+
+    def get_frequent_itemsets(self, support_cnt):
+        """
+        Returns all frequent itemsets which can be considered for next level
+        :param support_cnt: Minimum cnt required for itemset to be considered as frequent
+        :return:
+        """
+        self.frequent_itemsets = []
+        self.dfs(self.root, support_cnt)
+        return self.frequent_itemsets
+
+    def hash(self, val):
+        return val % self.max_child_cnt
+
+
+def generate_hash_tree(candidate_itemsets, length, max_leaf_cnt=4, max_child_cnt=5):
+    """
+    This function generates hash tree of itemsets with each node having no more than child_max_length
+    childs and each leaf node having no more than max_leaf_length.
+    :param candidate_itemsets: Itemsets
+    :param length: Length if each itemset
+    :param max_leaf_length:
+    :param child_max_length:
+    :return:
+    """
+    htree = HTree(max_child_cnt, max_leaf_cnt)
+    for itemset in candidate_itemsets:
+        # add this itemset to hashtree
+        htree.insert(itemset)
+    return htree
+
+
+def generate_k_subsets(dataset, length):
+    subsets = []
+    for itemset in dataset:
+        subsets.extend(map(list, itertools.combinations(itemset, length)))
+    return subsets
+
+
+def is_prefix(list_1, list_2):
+    for i in range(len(list_1) - 1):
+        if list_1[i] != list_2[i]:
+            return False
+    return True
+
+
+def apriori_generate_frequent_itemsets(dataset, support):
+    all_frequent_itemsets = []
+    support_cnt = int(support / 100.0 * len(dataset))
+    prev_frequent = [[x] for x in find_frequent_one(dataset, support)]
+    length = 2
+    while len(prev_frequent) > 1:
+        new_candidates = []
+        for i in range(len(prev_frequent)):
+            j = i + 1
+            while j < len(prev_frequent) and is_prefix(prev_frequent[i], prev_frequent[j]):
+                # this part makes sure that all of the items remain lexicographically sorted.
+                new_candidates.append(prev_frequent[i][:-1] +
+                                      [prev_frequent[i][-1]] +
+                                      [prev_frequent[j][-1]]
+                                      )
+                j += 1
+
+        # generate hash tree and find frequent itemsets
+        h_tree = generate_hash_tree(new_candidates, length)
+        # for each transaction, find all possible subsets of size "length"
+        k_subsets = generate_k_subsets(dataset, length)
+
+        # support counting and finding frequent itemsets
+        for subset in k_subsets:
+            h_tree.add_support(subset)
+
+        # find frequent itemsets
+        new_frequent = h_tree.get_frequent_itemsets(support_cnt)
+        all_frequent_itemsets.extend(new_frequent)
+        prev_frequent = new_frequent
+        length += 1
+
+    return all_frequent_itemsets
+
+if __name__ == '__main__':
+    transactions = load_data('1000-out1.csv')
+    #print find_frequent_one(transactions, 5)
+    frequent = apriori_generate_frequent_itemsets(transactions, 5)
