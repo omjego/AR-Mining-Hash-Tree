@@ -1,5 +1,4 @@
-import csv
-import itertools
+import csv, itertools, parameters
 
 
 def load_data(filename):
@@ -33,7 +32,7 @@ def find_frequent_one(data_set, support):
     for key, cnt in candidate_one.items():
         # check if given item has sufficient count.
         if cnt >= (support * total / 100):
-            frequent_1.append(key)
+            frequent_1.append(([key], cnt))
     return frequent_1
 
 
@@ -128,8 +127,8 @@ class HTree:
         if node.isLeaf:
             for key, value in node.bucket.iteritems():
                 if value >= support_cnt:
-                    self.frequent_itemsets.append(list(key))
-                    print key, value, support_cnt
+                    self.frequent_itemsets.append((list(key), value))
+                    # print key, value, support_cnt
             return
 
         for child in node.children.values():
@@ -181,9 +180,16 @@ def is_prefix(list_1, list_2):
 
 
 def apriori_generate_frequent_itemsets(dataset, support):
-    all_frequent_itemsets = []
+    """
+    Generates frequent itemsets
+    :param dataset:
+    :param support:
+    :return: List of f-itemsets with their respective count in
+            form of list of tuples.
+    """
     support_cnt = int(support / 100.0 * len(dataset))
-    prev_frequent = [[x] for x in find_frequent_one(dataset, support)]
+    all_frequent_itemsets = find_frequent_one(dataset, support)
+    prev_frequent = [x[0] for x in all_frequent_itemsets]
     length = 2
     while len(prev_frequent) > 1:
         new_candidates = []
@@ -209,12 +215,64 @@ def apriori_generate_frequent_itemsets(dataset, support):
         # find frequent itemsets
         new_frequent = h_tree.get_frequent_itemsets(support_cnt)
         all_frequent_itemsets.extend(new_frequent)
-        prev_frequent = new_frequent
+        prev_frequent = [tup[0] for tup in new_frequent]
+        prev_frequent.sort()
         length += 1
 
     return all_frequent_itemsets
 
+
+def generate_association_rules(f_itemsets, confidence):
+    """
+    This method generates association rules with confidence greater than threshold
+    confidence. For finding confidence we don't need to traverse dataset again as we
+    already have support of frequent itemsets.
+    Remember Anti-monotone property ?
+    I've done pruning in this step also, which reduced its complexity significantly:
+    Say X -> Y is AR which don't have enough confidence then any other rule X' -> Y'
+    where (X' subset of X) is not possible as sup(X') >= sup(X).
+
+    :param f_itemsets: Frequent itemset with their support values
+    :param confidence:
+    :return: Returns association rules with associated confidence
+    """
+
+    hash_map = {}
+    for itemset in f_itemsets:
+        hash_map[tuple(itemset[0])] = itemset[1]
+
+    a_rules = []
+    for itemset in f_itemsets:
+        length = len(itemset[0])
+        if length == 1:
+            continue
+
+        union_support = hash_map[tuple(itemset[0])]
+        for i in range(1, length):
+
+            lefts = map(list, itertools.combinations(itemset[0], i))
+            for left in lefts:
+                conf = 100.0 * union_support / hash_map[tuple(left)]
+                if conf >= confidence:
+                    a_rules.append([left,list(set(itemset[0]) - set(left)), conf])
+    return a_rules
+
+
+def print_rules(rules):
+
+    for item in rules:
+        left = ','.join(map(str, item[0]))
+        right = ','.join(map(str, item[1]))
+        print (' ==> '.join([left, right]))
+    print('Total Rules Generated: ', len(rules))
+
 if __name__ == '__main__':
     transactions = load_data('1000-out1.csv')
-    #print find_frequent_one(transactions, 5)
-    frequent = apriori_generate_frequent_itemsets(transactions, 5)
+    # print find_frequent_one(transactions, 5)
+    frequent = apriori_generate_frequent_itemsets(transactions, parameters.SUPPORT)
+    # for item in frequent:
+    #     if len(item[0]) > 1:
+    #         print item
+
+    a_rules = generate_association_rules(frequent, parameters.CONFIDENCE)
+    print_rules(a_rules)

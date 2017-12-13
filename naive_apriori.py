@@ -1,6 +1,7 @@
 import itertools
 import csv
-import numpy as np
+import parameters
+
 def load_data(filename, max_attr=100):
     """ 
     Loads data from given
@@ -77,7 +78,6 @@ def apply_support(singles, support):
                     cnt += 1
             if (100 * cnt / trans) >= float(support):
                 c.sort()
-                print(c, cnt)
                 current.append(c)
         prev_l = []
         for l in current:
@@ -85,7 +85,9 @@ def apply_support(singles, support):
         k += 1
         if current:
             L.append(current)
-    print L
+    # for item in L:
+    #     for x in item:
+    #         print x
     return L
 
 
@@ -116,10 +118,14 @@ def find_association_rules(singles, support, confidence):
                         for index in l:
                             if index not in s:
                                 m.append(index)
-                        #print ("#  %damping_factor : %s :: %s %damping_factor %damping_factor" % (num, s, m, 100 * inc2 / len(D), 100 * inc2 / inc1))
+                        #print(s, " ==> ", set(l) - set(s))
+                        left = ','.join(s)
+                        right = ','.join(set(l) - set(s))
+                        print (' ==> '.join([left, right]))
                         result += 1
                         num += 1
 
+    print('Total rules generated:', result)
     return result
 
 
@@ -146,8 +152,9 @@ def apriori(prev_l, k):
     return result
 
 
+
 data = load_data('1000-out1.csv')
-solve(data, 5, 10)
+solve(data, parameters.SUPPORT, parameters.CONFIDENCE)
 # for s in xrange(2, 11, 2):
 #     for c in xrange(s, 11, 2):
 #         count = solve(data, s, c)
